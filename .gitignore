@@ -12,3 +12,6 @@ ikon-onizleme.png
 
 # Dış araçlar (PresentMon, IntelMSR): ayrıca indirilir
 bin/
+
+# Release paketleri (dist\ altında üretilir, GitHub Release olarak yüklenir)
+dist/

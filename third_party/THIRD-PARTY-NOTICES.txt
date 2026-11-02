@@ -1,0 +1,43 @@
+Third-party components / Üçüncü taraf bileşenler
+================================================
+
+Game Monitor (Oyun Monitörü) itself is MIT licensed (see LICENSE).
+The release package also contains the following unmodified third-party files
+in the bin\ folder. They are NOT part of this project's source repository.
+
+Oyun Monitörü'nün kendisi MIT lisanslıdır (LICENSE). Release paketi bin\
+klasöründe aşağıdaki değiştirilmemiş üçüncü taraf dosyaları da içerir; bunlar
+bu projenin kaynak deposunda yer almaz.
+
+
+1) bin\PresentMon.exe
+---------------------
+Intel PresentMon console application, version 2.6.0 (PresentMon-2.6.0-x64.exe)
+Source:   https://github.com/GameTechDev/PresentMon (tag v2.6.0)
+Download: https://github.com/GameTechDev/PresentMon/releases/tag/v2.6.0
+SHA-256:  b2a706bc6ad475749e3b7e3409263aa1e6906d45bdcf993f6dbc0f660188f1af
+License:  MIT, Copyright (C) 2017-2024 Intel Corporation
+          -> PresentMon-LICENSE.txt
+          Third-party notices of PresentMon -> PresentMon-THIRD_PARTY.txt
+
+
+2) bin\IntelMSR.bin
+-------------------
+PawnIO module "IntelMSR" from PawnIO.Modules, version 0.2.11
+(release_0_2_11.zip)
+Source:   https://github.com/namazso/PawnIO.Modules (tag 0.2.11, file IntelMSR.p)
+Download: https://github.com/namazso/PawnIO.Modules/releases/tag/0.2.11
+SHA-256:  d6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c9b92e5f
+License:  GNU Lesser General Public License v2.1 or later (LGPL-2.1-or-later),
+          Copyright (C) 2025 namazso <admin@namazso.eu>
+          -> PawnIO.Modules-COPYING.txt
+          The complete corresponding source code of this exact version is
+          included in the release package as PawnIO.Modules-0.2.11-src.zip
+          (unmodified GitHub source archive of tag 0.2.11).
+          Bu sürümün kaynak kodunun tamamı release paketinde
+          PawnIO.Modules-0.2.11-src.zip olarak yer alır.
+
+The module runs inside the PawnIO driver, which is NOT included and must be
+installed separately from https://pawnio.eu/ (namazso).
+Modül PawnIO sürücüsü içinde çalışır; sürücü pakete dahil değildir, ayrıca
+https://pawnio.eu/ adresinden kurulmalıdır.

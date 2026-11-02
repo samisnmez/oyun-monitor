@@ -8,7 +8,12 @@
 //  - FPS ve gecikme, Intel PresentMon'un ETW çıktısından okunur (bin\PresentMon.exe).
 //  - CPU sıcaklığı PawnIO sürücüsüyle işlemcinin kendi sensöründen okunur (bin\IntelMSR.bin).
 //
+// Bir ölçüm kaynağı yoksa (NVIDIA olmayan GPU, AMD işlemci, PawnIO kurulu değil, PresentMon yok)
+// uygulama çökmez; ilgili alan "—" ya da "yok"/"N/A" gösterir.
+// Arayüz dili: Windows arayüz dili Türkçe ise Türkçe, değilse İngilizce.
+//
 // Derleme: build.cmd (Windows'taki .NET Framework 4.8 derleyicisi, csc.exe).
+// Lisans: MIT (LICENSE). bin\ içindeki araçların lisansları: third_party\ klasörü.
 
 using System;
 using System.Collections.Generic;
@@ -19,15 +24,50 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
+using System.Reflection;
+
+[assembly: AssemblyTitle("Oyun Monitörü / Game Monitor")]
+[assembly: AssemblyProduct("Oyun Monitörü")]
+[assembly: AssemblyCopyright("Copyright (c) 2026 Sami Sönmez, MIT License")]
+[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.0.0.0")]
+
+// ---------------------------------------------------------------- Arayüz metinleri (TR / EN)
+// Windows arayüz dili Türkçe ise Türkçe, değilse İngilizce metin seçilir.
+static class Metin
+{
+    public static bool Turkce = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "tr";
+
+    static string S(string tr, string en) { return Turkce ? tr : en; }
+
+    public static string Baslik { get { return S("Oyun Monitörü", "Game Monitor"); } }
+    public static string HepUstte { get { return S("Her zaman üstte", "Always on top"); } }
+    public static string Kapat { get { return S("Kapat", "Close"); } }
+    public static string GpuSicaklik { get { return S("GPU SICAKLIK", "GPU TEMP"); } }
+    public static string GpuKullanim { get { return S("GPU KULLANIM", "GPU USAGE"); } }
+    public static string Low1 { get { return S("%1 LOW", "1% LOW"); } }
+    public static string CpuSicaklik { get { return S("CPU SICAKLIK", "CPU TEMP"); } }
+    public static string CpuKullanim { get { return S("CPU KULLANIM", "CPU USAGE"); } }
+    public static string Gecikme { get { return S("GECİKME", "LATENCY"); } }
+    public static string Yok { get { return S("yok", "N/A"); } }
+    public static string PresentMonYok { get { return S(@"PresentMon yok (bin\PresentMon.exe)", @"PresentMon not found (bin\PresentMon.exe)"); } }
+    public static string PresentMonBaslamadi { get { return S("PresentMon başlamadı: ", "PresentMon failed to start: "); } }
+}
 
 static class Program
 {
     [STAThread]
     static void Main(string[] args)
     {
-        // --onizleme <dosya.png>: örnek değerlerle pencere resmini kaydeder (tasarım kontrolü).
-        if (args.Length == 2 && args[0] == "--onizleme")
+        // --onizleme <dosya.png> [tr|en]: örnek değerlerle pencere resmini kaydeder (tasarım
+        // kontrolü). Dil verilmezse sistem dili kullanılır. --preview aynı işi yapar.
+        if ((args.Length == 2 || args.Length == 3) && (args[0] == "--onizleme" || args[0] == "--preview"))
         {
+            if (args.Length == 3)
+            {
+                Metin.Turkce = args[2] == "tr";
+                Thread.CurrentThread.CurrentCulture = new CultureInfo(Metin.Turkce ? "tr-TR" : "en-US");
+            }
             using (var f = new MonitorForm(true))
             using (var bmp = new Bitmap(f.ClientSize.Width, f.ClientSize.Height))
             {
@@ -61,15 +101,32 @@ static class Nvml
     [DllImport("nvml.dll", EntryPoint = "nvmlDeviceGetUtilizationRates")]
     static extern int GetUtilization(IntPtr device, out Utilization util);
 
-    static IntPtr device = IntPtr.Zero;
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr LoadLibrary(string path);
 
+    static IntPtr device = IntPtr.Zero;
+    static bool acik;
+
+    // NVIDIA sürücüsü yoksa (AMD/Intel GPU) nvml.dll bulunamaz; GPU satırları "—" kalır.
     public static bool Start()
     {
-        try { return Init() == 0 && GetHandle(0, out device) == 0; }
-        catch (DllNotFoundException) { return false; }
+        try
+        {
+            // Yeni sürücüler nvml.dll'i System32'ye koyar; eskileri NVSMI klasörüne.
+            string eski = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                @"NVIDIA Corporation\NVSMI\nvml.dll");
+            if (!File.Exists(Path.Combine(Environment.SystemDirectory, "nvml.dll")) && File.Exists(eski))
+                LoadLibrary(eski);
+            if (Init() != 0) return false;
+            acik = true;
+            if (GetHandle(0, out device) == 0) return true;
+            device = IntPtr.Zero;
+            Stop();
+            return false;
+        }
+        catch (Exception) { device = IntPtr.Zero; return false; } // DLL ya da giriş noktası yok
     }
 
-    public static void Stop() { if (device != IntPtr.Zero) { try { Shutdown(); } catch { } } }
+    public static void Stop() { if (acik) { acik = false; try { Shutdown(); } catch { } } }
 
     public static int Temperature()
     {
@@ -129,7 +186,7 @@ class FrameStats
 
     public void Start(string exe)
     {
-        if (!File.Exists(exe)) { Error = "PresentMon yok"; return; }
+        if (!File.Exists(exe)) { Error = Metin.PresentMonYok; return; }
         var psi = new ProcessStartInfo(exe,
             "--output_stdout --no_console_stats --stop_existing_session " +
             "--session_name OyunMonitor --track_pc_latency --exclude dwm.exe")
@@ -145,7 +202,7 @@ class FrameStats
             Job.Attach(proc); // Monitör kapanınca (çökse bile) PresentMon da kapanır.
             proc.PriorityClass = ProcessPriorityClass.BelowNormal;
         }
-        catch (Exception e) { Error = "PresentMon başlamadı: " + e.Message; return; }
+        catch (Exception e) { Error = Metin.PresentMonBaslamadi + e.Message; return; }
 
         proc.ErrorDataReceived += (s, e) =>
         {
@@ -303,6 +360,7 @@ static class Job
 // ---------------------------------------------------------------- CPU sıcaklığı (PawnIO)
 // Intel işlemcinin paket sıcaklığı MSR'den okunur: sıcaklık = TjMax - okunan fark.
 // PawnIO sürücüsü ve bin\IntelMSR.bin modülü gerekir; yoksa satır "—" kalır.
+// AMD ve diğer işlemcilerde IntelMSR modülü yüklenmeyi reddeder; satır yine "—" kalır.
 static class CpuTemp
 {
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
@@ -322,6 +380,12 @@ static class CpuTemp
     static readonly byte[] output = new byte[8];
 
     public static bool Start(string module)
+    {
+        try { return Baslat(module); }
+        catch (Exception) { Stop(); return false; }
+    }
+
+    static bool Baslat(string module)
     {
         if (!File.Exists(module)) return false;
         IntPtr h = CreateFile(@"\\?\GLOBALROOT\Device\PawnIO", 0xC0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
@@ -420,7 +484,7 @@ class MonitorForm : Form
 
     public MonitorForm(bool onizleme = false)
     {
-        Text = "Oyun Monitörü";
+        Text = Metin.Baslik;
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { } // görev çubuğu ikonu
         FormBorderStyle = FormBorderStyle.None;
         TopMost = true;
@@ -431,10 +495,10 @@ class MonitorForm : Form
         Location = KonumYukle();
 
         var menu = new ContextMenuStrip();
-        var ustte = new ToolStripMenuItem("Her zaman üstte") { Checked = true };
+        var ustte = new ToolStripMenuItem(Metin.HepUstte) { Checked = true };
         ustte.Click += (s, e) => { TopMost = !TopMost; ustte.Checked = TopMost; };
         menu.Items.Add(ustte);
-        menu.Items.Add("Kapat", null, (s, e) => Close());
+        menu.Items.Add(Metin.Kapat, null, (s, e) => Close());
         ContextMenuStrip = menu;
 
         MouseDown += (s, e) =>
@@ -498,21 +562,21 @@ class MonitorForm : Form
         var g = e.Graphics;
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-        string yok = frames.Error != null ? "yok" : "—";
+        string yok = frames.Error != null ? Metin.Yok : "—";
         int tj = CpuTemp.TjMax > 0 ? CpuTemp.TjMax : 100;
 
         Gosterge(g, 118, 128,
-            "GPU SICAKLIK", Tam(gpuT, "°"), Oran(gpuT, 0, 95), Oran(gpuT, 40, 85),
-            "GPU KULLANIM", Tam(gpuU, "%"), Oran(gpuU, 0, 100),
-            "%1 LOW", low1 < 0 ? yok : low1.ToString("0"));
+            Metin.GpuSicaklik, Tam(gpuT, "°"), Oran(gpuT, 0, 95), Oran(gpuT, 40, 85),
+            Metin.GpuKullanim, Tam(gpuU, "%"), Oran(gpuU, 0, 100),
+            Metin.Low1, low1 < 0 ? yok : low1.ToString("0"));
 
         g.DrawString(fps < 0 ? yok : fps.ToString("0"), fpsFont, fBeyaz, new RectangleF(220, 128, 100, 50), ortala);
         g.DrawString("FPS", etiketFont, fSoluk, new RectangleF(220, 178, 100, 16), ortala);
 
         Gosterge(g, 422, 128,
-            "CPU SICAKLIK", Tam(cpuT, "°"), Oran(cpuT, 0, tj), Oran(cpuT, 40, 85),
-            "CPU KULLANIM", Tam(cpuU, "%"), Oran(cpuU, 0, 100),
-            "GECİKME", lat < 0 ? yok : lat.ToString("0.0"));
+            Metin.CpuSicaklik, Tam(cpuT, "°"), Oran(cpuT, 0, tj), Oran(cpuT, 40, 85),
+            Metin.CpuKullanim, Tam(cpuU, "%"), Oran(cpuU, 0, 100),
+            Metin.Gecikme, lat < 0 ? yok : lat.ToString("0.0"));
 
         if (frames.Error != null)
             g.DrawString(frames.Error, etiketFont, fSoluk, new RectangleF(10, 220, 520, 16), sagaYasla);
@@ -582,11 +646,24 @@ class MonitorForm : Form
         g.DrawString(ortaDeger, ortaFont, fBeyaz, new RectangleF(cx - r, cy - 12, 2 * r, 40), ortala);
     }
 
+    // Pencere konumu kullanıcı profilinde saklanır (%APPDATA%\OyunMonitor\konum.txt); exe yazma
+    // izni olmayan bir klasörde (ör. Program Files) dursa da çalışır. Eski sürümün exe yanındaki
+    // konum.txt dosyası yalnız okunur (taşıma için).
+    static string KonumDosyasi
+    {
+        get
+        {
+            return Path.Combine(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "OyunMonitor"), "konum.txt");
+        }
+    }
+
     Point KonumYukle()
     {
         try
         {
-            var p = File.ReadAllText(Path.Combine(klasor, "konum.txt")).Split(',');
+            string dosya = File.Exists(KonumDosyasi) ? KonumDosyasi : Path.Combine(klasor, "konum.txt");
+            var p = File.ReadAllText(dosya).Split(',');
             var pt = new Point(int.Parse(p[0]), int.Parse(p[1]));
             foreach (var s in Screen.AllScreens)
                 if (s.WorkingArea.Contains(pt)) return pt;
@@ -598,7 +675,12 @@ class MonitorForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        try { File.WriteAllText(Path.Combine(klasor, "konum.txt"), Location.X + "," + Location.Y); } catch { }
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(KonumDosyasi));
+            File.WriteAllText(KonumDosyasi, Location.X + "," + Location.Y);
+        }
+        catch { }
         timer.Stop();
         frames.Stop();
         CpuTemp.Stop();
