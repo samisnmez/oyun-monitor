@@ -1,0 +1,14 @@
+# Derleme çıktısı (build.cmd üretir)
+OyunMonitor.exe
+
+# Çalışma sırasında oluşan ayar
+konum.txt
+
+# Önizleme görseli
+ikon-onizleme.png
+
+# Git öncesi elle alınan yedekler
+*.cs.v*
+
+# Dış araçlar (PresentMon, IntelMSR): ayrıca indirilir
+bin/
